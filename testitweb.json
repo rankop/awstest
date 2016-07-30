@@ -1,0 +1,138 @@
+{
+  "Description": "Catalyst testitweb server",
+  "Parameters": {
+    "KeyPair": {
+      "Description": "Name of the keypair to use for SSH access",
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "MyElasticLoadBalancer": {
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "HealthCheck": {
+          "HealthyThreshold": 3,
+          "Interval": 30,
+          "Target": "HTTP:80/",
+          "Timeout": 5,
+          "UnhealthyThreshold": 5
+        },
+        "Listeners": [
+          {
+            "InstancePort": 80,
+            "LoadBalancerPort": 80,
+            "Protocol": "HTTP"
+          }
+        ]
+      },
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer"
+    },
+    "MySecurityGroup": {
+      "Properties": {
+        "GroupDescription": "Allow access to testitweb",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": 22,
+            "IpProtocol": "tcp",
+            "ToPort": 22
+          },
+          {
+            "FromPort": 80,
+            "IpProtocol": "tcp",
+            "SourceSecurityGroupName": {
+              "Fn::GetAtt": [
+                "MyElasticLoadBalancer",
+                "SourceSecurityGroup.GroupName"
+              ]
+            },
+            "SourceSecurityGroupOwnerId": {
+              "Fn::GetAtt": [
+                "MyElasticLoadBalancer",
+                "SourceSecurityGroup.OwnerAlias"
+              ]
+            },
+            "ToPort": 80
+          }
+        ]
+      },
+      "Type": "AWS::EC2::SecurityGroup"
+    },
+    "MyASG": {
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "Cooldown": 120,
+        "LaunchConfigurationName": {
+          "Ref": "MyLaunchConfig"
+        },
+        "LoadBalancerNames": [
+          {
+            "Ref": "MyElasticLoadBalancer"
+          }
+        ],
+        "MaxSize": 1,
+        "MinSize": 1,
+        "Tags": [
+          {
+            "Key": "Name",
+            "PropagateAtLaunch": "true",
+            "Value": "TestITWeb"
+          }
+        ]
+      },
+      "Type": "AWS::AutoScaling::AutoScalingGroup"
+    },
+    "MyLaunchConfig": {
+      "Properties": {
+        "ImageId": "ami-d732f0b7",
+        "InstanceType": "t2.micro",
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "MySecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash",
+                "apt-get update",
+                "apt-get upgrade -y",
+                "apt-get install apache2 -y",
+                "echo \"<html><body><h1>Welcome</h1></html>\" > /var/www/html/index.html"
+              ]
+            ]
+          }
+        }
+      },
+      "Type": "AWS::AutoScaling::LaunchConfiguration"
+    }
+  },
+  "Outputs": {
+    "URL": {
+      "Description": "testitweb.com URL",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "MyElasticLoadBalancer",
+                "DNSName"
+              ]
+            }
+          ]
+        ]
+      }
+    }
+  }
+}
